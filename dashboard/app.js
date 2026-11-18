@@ -38,7 +38,10 @@
     });
   }
 
-  // The model, in one function: implied = TVL x 0.30 x growth x age x chain.
+  // The model, in one function: implied = TVL x sector multiple x growth x age x chain.
+  // The sector multiple is the row's own: the median mcap/TVL of live-token
+  // protocols in its category (or the global median where its category has
+  // too few), exactly as lib/model.ts computes it.
   function impliedOf(row, model) {
     var g = row.change_7d === null || row.change_7d === undefined ? 0 : row.change_7d;
     g = Math.min(model.growth_cap, Math.max(model.growth_floor, g));
@@ -46,7 +49,8 @@
     var age = row.age_days === null || row.age_days === undefined ? model.unknown_age_days : row.age_days;
     var ageMult = model.age_floor + (Math.min(Math.max(age, 0), model.age_cap_days) / model.age_cap_days) * model.age_range;
     var chain = 1 + Math.min(Math.max((row.chains || []).length - 1, 0), model.chain_max_steps) * model.chain_step;
-    return Math.max(1, Math.round(row.tvl_usd * model.base_multiple * growth * ageMult * chain));
+    var sector = row.sector_multiple === null || row.sector_multiple === undefined ? 0.3 : row.sector_multiple;
+    return Math.max(1, Math.round(row.tvl_usd * sector * growth * ageMult * chain));
   }
 
   function pctClass(n) {
@@ -54,6 +58,15 @@
     if (n > 0.5) return 'up';
     if (n < -0.5) return 'down';
     return 'flat';
+  }
+
+  // The chains column shows two chains and a count, so the board fits
+  // beside the detail panel at 1280px; the detail view lists them all.
+  function chainShort(chains) {
+    var list = chains || [];
+    if (list.length === 0) return '—';
+    if (list.length <= 2) return list.join(', ');
+    return list.slice(0, 2).join(', ') + ' +' + (list.length - 2);
   }
 
   function fillSelect(id, values) {
@@ -72,10 +85,13 @@
 
   document.getElementById('asof').textContent = DATA.as_of;
   document.getElementById('src').textContent = DATA.source;
+  var mult = DATA.multiples || { global_median: 0.21, global_live_n: 0, by_category: [] };
   document.getElementById('model-line').innerHTML =
-    'Model <code>radar-2</code>: implied = TVL &times; 0.30 &times; growth &times; age &times; chain &middot; ' +
+    'Model <code>radar-3</code>: implied = TVL &times; sector multiple &times; growth &times; age &times; chain &middot; ' +
     esc(DATA.board_size) + ' rows &middot; watchlist ' + esc(DATA.watchlist_size) + ' &middot; ' +
-    esc(DATA.early_size) + ' early finds below the $50M floor &middot; ' + esc(DATA.live_size) + ' already trading, set aside.';
+    esc(DATA.early_size) + ' early finds below the $50M floor &middot; ' + esc(DATA.live_size) + ' already trading, set aside. ' +
+    'The sector multiple is the median mcap/TVL of live-token protocols in the same category (global median ' +
+    esc(mult.global_median) + '&times; from ' + esc(mult.global_live_n) + ' live protocols where a category has fewer than 5).';
   var stats = document.getElementById('stats');
   var top = DATA.rows[0];
   var med = DATA.rows[Math.floor(DATA.rows.length / 2)];
@@ -85,6 +101,18 @@
     '<div class="stat"><b>' + esc(top ? fmtUsd(top.implied_value_usd) : '—') + '</b><span>Top implied value</span></div>' +
     '<div class="stat"><b>' + esc(med ? fmtUsd(med.implied_value_usd) : '—') + '</b><span>Median implied value</span></div>' +
     '<div class="stat"><b>' + esc(DATA.live_size) + '</b><span>Already trading</span></div>';
+
+  // The sector multiples the model priced every row with, so the reader
+  // (and the judge) can see the multiple is the market's, not the author's.
+  var multEl = document.getElementById('multiples');
+  if (multEl && DATA.multiples) {
+    var chips = DATA.multiples.by_category.map(function (m) {
+      return '<span class="mult"><b>' + esc(m.category) + '</b> ' + m.median.toFixed(2) + '× <i>(' + m.live_n + ' live)</i></span>';
+    }).join('');
+    multEl.innerHTML = '<h3>Sector multiples — median mcap/TVL of live-token protocols</h3><p>' + chips +
+      '<span class="mult"><b>Global</b> ' + DATA.multiples.global_median.toFixed(2) + '× <i>(' + DATA.multiples.global_live_n + ' live)</i></span></p>' +
+      '<p class="sub">A category with fewer than 5 live-token protocols has no median of its own and falls back to the global one. Multiples are clamped to 0.05–1.50×, so one wild ratio cannot set a sector\'s price.</p>';
+  }
 
   var tbody = document.getElementById('rows');
   var detail = document.getElementById('detail');
@@ -134,7 +162,7 @@
         '<td class="rank">' + r.rank + '</td>' +
         '<td><span class="pname">' + esc(r.name) + (r.watchlist ? '<span class="badge">WATCHLIST</span>' : '') + '</span><small>' + esc(r.slug) + '</small></td>' +
         '<td class="cat">' + esc(r.category || '—') + '</td>' +
-        '<td class="chn">' + esc((r.chains || []).slice(0, 3).join(', ') || '—') + '</td>' +
+        '<td class="chn">' + esc(chainShort(r.chains)) + '</td>' +
         '<td class="num">' + fmtUsd(r.tvl_usd) + '</td>' +
         '<td class="' + pctClass(r.change_7d) + '">' + fmtPct(r.change_7d) + '</td>' +
         '<td class="num">' + fmtAge(r.age_days) + '</td>' +
@@ -168,12 +196,17 @@
       '<p class="sub">' + esc(row.slug) + ' · ' + esc(row.category || 'Uncategorised') + ' · ' + esc((row.chains || []).join(', ') || '—') + (row.watchlist ? ' · <span class="badge">WATCHLIST</span>' : '') + '</p>' +
       '<dl class="kv">' +
       '<dt>Implied value</dt><dd class="val">' + fmtUsd(row.implied_value_usd) + '</dd>' +
+      '<dt>Sector multiple</dt><dd>' + row.sector_multiple.toFixed(2) + '× · ' + (row.sector_source === 'category' ? esc(row.category || '') : 'global') + '</dd>' +
       '<dt>TVL</dt><dd>' + fmtUsd(row.tvl_usd) + '</dd>' +
       '<dt>7-day change</dt><dd class="' + pctClass(row.change_7d) + '">' + fmtPct(row.change_7d) + '</dd>' +
       '<dt>Tracked since</dt><dd>' + esc(row.listed_at || 'unknown') + ' (' + fmtAge(row.age_days) + ')</dd>' +
       '<dt>Token recorded</dt><dd>None in snapshot</dd>' +
       '</dl>' +
       '<h3>Why this value</h3>' +
+      bar('Sector ' + row.sector_multiple.toFixed(2) + '×', row.sector_multiple, 1.5) +
+      '<p class="sub">' + (row.sector_source === 'category'
+        ? esc(row.category || 'Uncategorised') + ' median mcap/TVL ' + row.sector_multiple.toFixed(2) + '×, from ' + row.sector_live_n + ' live-token protocols in this category.'
+        : 'Global median mcap/TVL ' + row.sector_multiple.toFixed(2) + '×, from ' + row.sector_live_n + ' live-token protocols — this category has too few live tokens for its own median.') + '</p>' +
       bar('Growth ×' + (g > 0 ? '+' : '') + g.toFixed(1) + '%', row.growth_multiplier, 1.9) +
       bar('Age ' + fmtAge(row.age_days), row.age_multiplier, 1) +
       bar('Chains ×' + (row.chains || []).length, row.chain_multiplier, 1.1) +

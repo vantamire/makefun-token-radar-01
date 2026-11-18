@@ -8,7 +8,18 @@
 //
 // Implied value is derived only from the snapshot's own figures, per row:
 //
-//   base        = tvl_usd x 0.30
+//   sector      = the sector multiple for the protocol's category:
+//                 the median mcap/TVL of the snapshot's live-token
+//                 protocols in that category, where at least 5 of them
+//                 carry both a market cap and a TVL; otherwise the global
+//                 median over all 129 live protocols. Clamped to 0.05..1.50,
+//                 so one wild outlier (the snapshot holds a 400x row) cannot
+//                 set a sector's price by itself. The multiple is the
+//                 market's own pricing of comparable tokens, not a constant
+//                 the author picked: a Dex is priced like Dexes, a lender
+//                 like lenders, and a category with too few live tokens
+//                 falls back to the whole market's median.
+//   base        = tvl_usd x sector
 //   growth      = clamp(change_7d, -50, +150) per cent (null counts as 0)
 //   growthMult  = 1 + growth / 100 x 0.60
 //   ageDays     = days from listed_at to the snapshot's as_of (null -> 180)
@@ -17,13 +28,14 @@
 //   implied     = round(base x growthMult x ageMult x chainMult), at least $1
 //
 // Why each factor: TVL is the size of the business a token would price;
-// seven-day growth is its momentum, clamped so one wild week (the snapshot
-// holds a +4,448% row) cannot crown a protocol by itself; age is survival
-// with no token, so a protocol tracked for four years counts more than one
-// tracked for four weeks; chain breadth is a small diversification bonus.
-// No protocol name is ever special-cased: the same function scores every
-// row, and the dashboard recomputes it from the same figures so the page
-// and board.json always agree.
+// the sector multiple is what the market already pays per dollar of TVL
+// for that kind of business; seven-day growth is its momentum, clamped so
+// one wild week (the snapshot holds a +4,448% row) cannot crown a protocol
+// by itself; age is survival with no token, so a protocol tracked for four
+// years counts more than one tracked for four weeks; chain breadth is a
+// small diversification bonus. No protocol name is ever special-cased: the
+// same function scores every row, and the dashboard recomputes it from the
+// same figures so the page and board.json always agree.
 //
 // The board covers the whole watchlist (the floor, never the ceiling) plus
 // every other rankable pre-token protocol below the floor. Rankable means
@@ -56,7 +68,9 @@ export interface Snapshot {
 }
 
 export interface ModelConstants {
-  base_multiple: number;
+  sector_min_live: number;
+  sector_multiple_min: number;
+  sector_multiple_max: number;
   growth_weight: number;
   growth_floor: number;
   growth_cap: number;
@@ -69,7 +83,9 @@ export interface ModelConstants {
 }
 
 export const MODEL: ModelConstants = {
-  base_multiple: 0.3,
+  sector_min_live: 5,
+  sector_multiple_min: 0.05,
+  sector_multiple_max: 1.5,
   growth_weight: 0.6,
   growth_floor: -50,
   growth_cap: 150,
@@ -81,7 +97,7 @@ export const MODEL: ModelConstants = {
   chain_max_steps: 5,
 };
 
-export const MODEL_VERSION = 'radar-2';
+export const MODEL_VERSION = 'radar-3';
 
 /** How many live-token protocols the Already trading view carries, by market cap. */
 export const LIVE_ROWS = 24;
@@ -109,7 +125,9 @@ export interface BoardRow {
   age_days: number | null;
   implied_value_usd: number;
   model: {
-    base_multiple: number;
+    sector_multiple: number;
+    sector_source: 'category' | 'global';
+    sector_live_n: number;
     growth_pct: number;
     growth_multiplier: number;
     age_multiplier: number;
@@ -130,6 +148,9 @@ export interface RadarRow {
   listed_at: string | null;
   age_days: number | null;
   implied_value_usd: number;
+  sector_multiple: number;
+  sector_source: 'category' | 'global';
+  sector_live_n: number;
   growth_multiplier: number;
   age_multiplier: number;
   chain_multiplier: number;
@@ -147,12 +168,25 @@ export interface LiveRow {
   change_7d: number | null;
 }
 
+export interface SectorMultiple {
+  category: string;
+  median: number;
+  live_n: number;
+}
+
+export interface SectorMultiples {
+  global_median: number;
+  global_live_n: number;
+  by_category: SectorMultiple[];
+}
+
 export interface RadarData {
   as_of: string;
   source: string;
   floor_usd: number;
   model: ModelConstants;
   model_version: string;
+  multiples: SectorMultiples;
   watchlist_size: number;
   board_size: number;
   early_size: number;
@@ -183,12 +217,63 @@ export function ageDays(asOf: string, listedAt: string | null): number | null {
   return Math.max(0, Math.floor((a - b) / DAY_MS));
 }
 
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)]!;
+}
+
+/**
+ * The sector multiples, derived from the snapshot's own live-token
+ * protocols: for each category, the median mcap/TVL of its live protocols
+ * that carry both figures, where at least `sector_min_live` of them do;
+ * plus the global median over every live protocol. A category with too
+ * few live tokens has no median of its own and falls back to the global
+ * one. The median (not the mean) is used because the snapshot's ratios
+ * run from 0.003x to 400x: one outlier must not set a sector's price.
+ */
+export function sectorMultiples(snapshot: Snapshot, model: ModelConstants = MODEL): SectorMultiples {
+  const byCategory = new Map<string, number[]>();
+  const all: number[] = [];
+  for (const p of snapshot.protocols) {
+    if (p.mcap_usd === null || p.mcap_usd <= 0 || p.tvl_usd <= 0) continue;
+    const ratio = p.mcap_usd / p.tvl_usd;
+    if (!Number.isFinite(ratio)) continue;
+    all.push(ratio);
+    const key = p.category ?? 'Uncategorised';
+    const list = byCategory.get(key);
+    if (list === undefined) byCategory.set(key, [ratio]);
+    else list.push(ratio);
+  }
+  const global = all.length > 0 ? median(all) : 1;
+  const rows: SectorMultiple[] = [];
+  for (const [category, values] of [...byCategory.entries()].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))) {
+    if (values.length >= model.sector_min_live) rows.push({ category, median: round4(median(values)), live_n: values.length });
+  }
+  return { global_median: round4(global), global_live_n: all.length, by_category: rows };
+}
+
+/** The sector multiple one protocol is priced at: its category's median where one exists, else the global median, clamped. */
+export function sectorMultipleFor(
+  category: string | null,
+  multiples: SectorMultiples,
+  model: ModelConstants = MODEL,
+): { multiple: number; source: 'category' | 'global'; live_n: number } {
+  const hit = category === null ? undefined : multiples.by_category.find((m) => m.category === category);
+  const raw = hit !== undefined ? hit.median : multiples.global_median;
+  const multiple = Math.min(model.sector_multiple_max, Math.max(model.sector_multiple_min, raw));
+  return hit !== undefined
+    ? { multiple, source: 'category', live_n: hit.live_n }
+    : { multiple, source: 'global', live_n: multiples.global_live_n };
+}
+
 export function impliedValue(
   protocol: SnapshotProtocol,
   asOf: string,
   model: ModelConstants,
-): { implied: number; growthPct: number; growthMult: number; ageMult: number; chainMult: number; age: number | null } {
+  multiples: SectorMultiples,
+): { implied: number; sectorMultiple: number; sectorSource: 'category' | 'global'; sectorLiveN: number; growthPct: number; growthMult: number; ageMult: number; chainMult: number; age: number | null } {
   const age = ageDays(asOf, protocol.listed_at);
+  const sector = sectorMultipleFor(protocol.category, multiples, model);
   const rawGrowth = finite(protocol.change_7d, 0);
   const growthPct = Math.min(model.growth_cap, Math.max(model.growth_floor, rawGrowth));
   const growthMult = 1 + (growthPct / 100) * model.growth_weight;
@@ -197,8 +282,8 @@ export function impliedValue(
     model.age_floor +
     (Math.min(Math.max(ageForModel, 0), model.age_cap_days) / model.age_cap_days) * model.age_range;
   const chainMult = 1 + Math.min(Math.max(protocol.chains.length - 1, 0), model.chain_max_steps) * model.chain_step;
-  const implied = Math.max(1, Math.round(protocol.tvl_usd * model.base_multiple * growthMult * ageMult * chainMult));
-  return { implied, growthPct, growthMult, ageMult, chainMult, age };
+  const implied = Math.max(1, Math.round(protocol.tvl_usd * sector.multiple * growthMult * ageMult * chainMult));
+  return { implied, sectorMultiple: sector.multiple, sectorSource: sector.source, sectorLiveN: sector.live_n, growthPct, growthMult, ageMult, chainMult, age };
 }
 
 const VERSIONED = /\s(V\d+(\.\d+)?|v\d+(\.\d+)?|\d+\.\d+)$/;
@@ -248,8 +333,9 @@ export function buildBoard(snapshot: Snapshot, model: ModelConstants = MODEL): B
     .sort((a, b) => b.tvl_usd - a.tvl_usd || (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0));
   for (const p of early) chosen.set(p.slug, p);
 
+  const multiples = sectorMultiples(snapshot, model);
   const scored = [...chosen.values()].map((p) => {
-    const v = impliedValue(p, snapshot.as_of, model);
+    const v = impliedValue(p, snapshot.as_of, model, multiples);
     return { p, ...v };
   });
   scored.sort((a, b) => b.implied - a.implied || (a.p.slug < b.p.slug ? -1 : a.p.slug > b.p.slug ? 1 : 0));
@@ -270,7 +356,9 @@ export function buildBoard(snapshot: Snapshot, model: ModelConstants = MODEL): B
     age_days: s.age,
     implied_value_usd: s.implied,
     model: {
-      base_multiple: model.base_multiple,
+      sector_multiple: s.sectorMultiple,
+      sector_source: s.sectorSource,
+      sector_live_n: s.sectorLiveN,
       growth_pct: s.growthPct,
       growth_multiplier: round4(s.growthMult),
       age_multiplier: round4(s.ageMult),
@@ -447,6 +535,9 @@ export function radarRow(row: BoardRow): RadarRow {
     listed_at: row.listed_at,
     age_days: row.age_days,
     implied_value_usd: row.implied_value_usd,
+    sector_multiple: row.model.sector_multiple,
+    sector_source: row.model.sector_source,
+    sector_live_n: row.model.sector_live_n,
     growth_multiplier: row.model.growth_multiplier,
     age_multiplier: row.model.age_multiplier,
     chain_multiplier: row.model.chain_multiplier,
@@ -465,6 +556,7 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
     floor_usd: snapshot.floor_usd,
     model,
     model_version: MODEL_VERSION,
+    multiples: sectorMultiples(snapshot, model),
     watchlist_size: snapshot.watchlist.length,
     board_size: board.length,
     early_size: early,

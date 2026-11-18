@@ -40,6 +40,10 @@
   <section class="layout">
     <div class="board-col">
       <table class="board" id="board">
+        <colgroup>
+          <col style="width:34px"><col style="width:190px"><col style="width:108px"><col style="width:108px">
+          <col style="width:72px"><col style="width:62px"><col style="width:56px"><col style="width:96px">
+        </colgroup>
         <thead><tr>
           <th data-sort="implied">#</th><th data-sort="name">Protocol</th><th>Category</th><th>Chains</th>
           <th data-sort="tvl">TVL</th><th data-sort="growth">7d</th><th data-sort="age">Age</th><th data-sort="implied">Implied value</th>
@@ -51,7 +55,8 @@
     <aside class="detail" id="detail" aria-live="polite"></aside>
   </section>
   <footer class="foot">
-    <p>Model: implied = TVL × 0.30 × (1 + clamped 7-day growth × 0.60) × age factor × chain factor. Growth is clamped to −50%…+150%; age factor runs 0.55 at day 0 to 1.00 at 1,460 days (unknown age counts as 180 days); chain factor adds 0.02 per extra chain, up to 5. No protocol name is special-cased.</p>
+    <div id="multiples"></div>
+    <p>Model: implied = TVL × sector multiple × (1 + clamped 7-day growth × 0.60) × age factor × chain factor. The sector multiple is the median mcap/TVL of the snapshot's live-token protocols in the same category (at least 5 live, else the global median), clamped to 0.05–1.50×. Growth is clamped to −50%…+150%; age factor runs 0.55 at day 0 to 1.00 at 1,460 days (unknown age counts as 180 days); chain factor adds 0.02 per extra chain, up to 5. No protocol name is special-cased.</p>
     <p>Source: DefiLlama protocol list, fetched <span id="src">—</span>. “Records no token” means the snapshot carries no token for it — not proof it has none. Farming a protocol never guarantees an airdrop; never pay to claim.</p>
   </footer>
 </main>
