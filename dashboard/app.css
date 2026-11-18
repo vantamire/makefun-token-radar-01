@@ -1,0 +1,124 @@
+/* Token Radar — dark navy board, amber value, teal growth. No network. */
+:root {
+  --bg: #0b1220;
+  --panel: #111c31;
+  --panel2: #16233d;
+  --line: #26395c;
+  --text: #e8eef7;
+  --muted: #93a5c0;
+  --amber: #f5b942;
+  --teal: #3ec9a7;
+  --red: #f2707a;
+  --chip: #1d2f4e;
+  --focus: #7fb3ff;
+}
+* { box-sizing: border-box; }
+html { background: var(--bg); }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.55 "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+}
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 20px; }
+.top {
+  background: linear-gradient(180deg, #13233f 0%, #0b1220 100%);
+  border-bottom: 3px solid var(--amber);
+  padding: 28px 0 22px;
+}
+.eyebrow { margin: 0 0 8px; color: var(--amber); font-size: 12px; letter-spacing: 2.5px; font-weight: 700; }
+h1 { margin: 0 0 10px; font-size: 34px; line-height: 1.15; letter-spacing: -0.5px; }
+.lede { margin: 0; max-width: 860px; color: #c6d3e6; font-size: 16px; }
+.lede strong { color: var(--text); }
+.stats { display: flex; flex-wrap: wrap; gap: 10px; margin: 18px 0 0; }
+.stat {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 14px;
+  min-width: 130px;
+}
+.stat b { display: block; font-size: 22px; color: var(--amber); line-height: 1.2; }
+.stat span { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; }
+.model { margin: 14px 0 0; color: var(--muted); font-size: 13px; }
+.model code { color: #ffd98a; font-size: 12.5px; }
+.controls { padding: 18px 0 6px; }
+.tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+.tab {
+  background: var(--panel);
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 8px 18px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.tab.on { background: var(--amber); border-color: var(--amber); color: #231a05; }
+.filters { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+.filters label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; font-weight: 700; }
+.filters input[type="search"], .filters select {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 11px;
+  font: 14px/1.3 inherit;
+  min-width: 170px;
+}
+.filters input:focus, .filters select:focus, .tab:focus { outline: 2px solid var(--focus); outline-offset: 2px; }
+.check { flex-direction: row !important; align-items: center; padding-bottom: 10px; text-transform: none !important; letter-spacing: 0 !important; font-size: 14px !important; color: var(--text) !important; font-weight: 600 !important; }
+.count { color: var(--muted); font-size: 13px; margin: 12px 0 0; }
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 20px; align-items: start; padding: 14px 0 8px; }
+.board-col { min-width: 0; }
+table.board { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.board th, .board td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.board thead th { background: var(--panel2); color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.6px; cursor: pointer; white-space: nowrap; }
+.board thead th:hover { color: var(--text); }
+.board tbody tr { cursor: pointer; }
+.board tbody tr:hover { background: #18294a; }
+.board tbody tr.sel { background: #22365e; box-shadow: inset 3px 0 0 var(--amber); }
+.board td.num, .board th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.rank { color: var(--muted); font-weight: 700; }
+.pname { font-weight: 700; }
+.pname small { display: block; color: var(--muted); font-weight: 400; font-size: 12px; }
+.badge { display: inline-block; background: var(--amber); color: #231a05; font-size: 10px; font-weight: 800; letter-spacing: 0.5px; border-radius: 4px; padding: 1px 5px; margin-left: 6px; vertical-align: 1px; }
+.cat, .chn { color: var(--muted); font-size: 13px; }
+.val { color: var(--amber); font-weight: 800; white-space: nowrap; }
+.up { color: var(--teal); font-weight: 700; white-space: nowrap; }
+.down { color: var(--red); font-weight: 700; white-space: nowrap; }
+.flat { color: var(--muted); white-space: nowrap; }
+.note { color: var(--muted); font-size: 13px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+.detail {
+  position: sticky;
+  top: 16px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--amber);
+  border-radius: 12px;
+  padding: 18px;
+}
+.detail h2 { margin: 0 0 2px; font-size: 22px; }
+.detail .sub { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+.detail h3 { margin: 18px 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--amber); }
+.kv { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; font-size: 14px; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; }
+.bar-row { display: grid; grid-template-columns: 130px 1fr 52px; gap: 10px; align-items: center; font-size: 13px; margin: 7px 0; }
+.bar-row span:first-child { color: var(--muted); }
+.bar-row span:last-child { text-align: right; font-weight: 700; }
+.bar { height: 8px; background: var(--chip); border-radius: 99px; overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--teal); border-radius: 99px; }
+.bar i.warn { background: var(--amber); }
+.steps { margin: 0; padding-left: 20px; }
+.steps li { margin: 0 0 10px; font-size: 14px; }
+.steps li::marker { color: var(--amber); font-weight: 800; }
+.empty { color: var(--muted); padding: 26px 10px; text-align: center; }
+.foot { border-top: 1px solid var(--line); padding: 16px 0 30px; color: var(--muted); font-size: 13px; }
+.foot p { margin: 8px 0; }
+@media (max-width: 900px) {
+  .layout { grid-template-columns: 1fr; }
+  .detail { position: static; }
+  h1 { font-size: 26px; }
+  .board th:nth-child(4), .board td:nth-child(4) { display: none; }
+}
